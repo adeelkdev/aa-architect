@@ -1,18 +1,26 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from "node:path";
+import path from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/aa-architect/', // <-- repo name
+  // Important: must match your repo name for GitHub Pages
+  base: '/aa-architect/',
   build: {
+    outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
-      external: [], // ensure nothing is treated as external
+      // make sure nothing is accidentally excluded
+      external: [],
     },
   },
-    resolve: {
+  resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"),
+      '@': path.resolve(__dirname, 'src'),
     },
+  },
+  // helps prevent broken SPA routing on reload
+  server: {
+    historyApiFallback: true,
   },
 })
