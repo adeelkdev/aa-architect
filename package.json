@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist",
-    "build": "tsc -b && vite build",
-    "dev": "vite"
+    "build": "vite build",
+    "predeploy": "npm run build && mkdir -p dist && (echo > dist/.nojekyll)",
+    "deploy": "gh-pages -d dist --dotfiles"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
