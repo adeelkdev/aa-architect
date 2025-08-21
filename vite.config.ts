@@ -4,13 +4,12 @@ import path from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
-  // Important: must match your repo name for GitHub Pages
-  base: '/aa-architect/',
+  // Use env variable for base (defaults to "/")
+  base: process.env.VITE_APP_BASE || '/',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
-      // make sure nothing is accidentally excluded
       external: [],
     },
   },
@@ -19,8 +18,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
-  // helps prevent broken SPA routing on reload
   server: {
+    // instead of historyApiFallback (webpack), Vite uses middlewareMode
     historyApiFallback: true,
   },
 })
