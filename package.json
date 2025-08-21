@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "predeploy": "npm run build && mkdir -p dist && (echo > dist/.nojekyll)",
-    "deploy": "gh-pages -d dist --dotfiles"
+    "deploy": "gh-pages -d dist --dotfiles",
+    "dev": "vite"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
