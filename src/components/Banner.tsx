@@ -1,44 +1,54 @@
-import { useState } from "react";
+import { motion } from "framer-motion";
+import SearchBar from './SearchBar'
 
-export type SearchBarProps = {
-  isSearchActive: boolean;
-  setIsSearchActive: (active: boolean) => void;
-};
+interface BannerProps {
+  isSearchActive: boolean
+  setIsSearchActive: (active: boolean) => void
+}
 
-export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchBarProps) {
-  const [query, setQuery] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-    console.log("Searching:", query);
-    // You can integrate your Databricks call here
-  };
-
+export default function Banner({ isSearchActive, setIsSearchActive }: BannerProps) {
   return (
-    <div
-      className={`relative w-full transition-all duration-300 ${
-        isSearchActive ? "scale-100 opacity-100" : "scale-95 opacity-0 pointer-events-none"
-      }`}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="flex items-center bg-white rounded-lg shadow-md overflow-hidden"
-      >
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ask AA Architect..."
-          className="flex-grow px-4 py-3 text-gray-800 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="px-5 py-3 bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+    <section className="relative w-full">
+      {/* Banner Image Container with correct aspect ratio */}
+      <div className="relative w-full" style={{ aspectRatio: '1920/764' }}>
+        <motion.div
+          className="relative w-full h-full"
+          initial={{ scale: 1.05, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 1.2, ease: "easeOut" }}
         >
-          Search
-        </button>
-      </form>
-    </div>
-  );
+          <img
+            src="https://res.cloudinary.com/de68tfmnt/image/upload/v1754919067/Frame_85_zcuxtc.jpg"
+            alt="AA Architect Assistance - Banner"
+            className="w-full h-full object-cover object-center"
+          />
+
+          {/* Subtle floating animation overlay */}
+          <motion.div
+            className="absolute inset-0 w-full h-full"
+            animate={{
+              y: [0, -4, 0],
+            }}
+            transition={{
+              duration: 8,
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
+          >
+            <div className="w-full h-full bg-gradient-to-br from-transparent via-transparent to-transparent" />
+          </motion.div>
+        </motion.div>
+
+        {/* Search Bar positioned in the grey bottom area */}
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center pb-8 sm:pb-12 lg:pb-16 z-50">
+          <div className="w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+            <SearchBar
+              isSearchActive={isSearchActive}
+              setIsSearchActive={setIsSearchActive}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 }

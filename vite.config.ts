@@ -1,25 +1,34 @@
-import { defineConfig } from 'vite'
+// vite.config.ts
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
-export default defineConfig({
-  plugins: [react()],
-  // Use env variable for base (defaults to "/")
-  base: process.env.VITE_APP_BASE || '/',
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      external: [],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const host = (env.VITE_DATABRICKS_HOST || '').replace(/\/$/, '')
+  const token = env.VITE_DATABRICKS_TOKEN || ''
+
+  return {
+    plugins: [react()],
+    base: env.VITE_APP_BASE || '/aa-architect/',
+    resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+    server: {
+      proxy: {
+        '/dbx': {
+          target: host,          // e.g. https://dbc-xxxx.cloud.databricks.com
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p) => p.replace(/^\/dbx/, ''),
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyReq) => {
+              if (token) {
+                proxyReq.setHeader('authorization', `Bearer ${token}`)
+              }
+              proxyReq.setHeader('content-type', 'application/json')
+            })
+          },
+        },
+      },
     },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
-  },
-  server: {
-    // instead of historyApiFallback (webpack), Vite uses middlewareMode
-    historyApiFallback: true,
-  },
+  }
 })
