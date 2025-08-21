@@ -1,0 +1,8 @@
+// package.json
+{
+  "scripts": {
+    "build": "vite build",
+    "predeploy": "npm run build && mkdir -p dist && (echo > dist/.nojekyll)",
+    "deploy": "gh-pages -d dist --dotfiles"
+  }
+}
