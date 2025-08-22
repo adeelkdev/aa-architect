@@ -119,7 +119,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
           <svg width="8" height="8" viewBox="0 0 8 8" className={API_URL ? 'fill-green-500' : 'fill-yellow-500'}>
             <circle cx="4" cy="4" r="4" />
           </svg>
-          {API_URL ? 'API configured' : 'API URL not configured (add VITE_API_URL in .env.local)'}
+          {API_URL ? 'API configured' : 'API URL not configured (add VITE_API_URL in env)'}
         </span>
       </div>
 
