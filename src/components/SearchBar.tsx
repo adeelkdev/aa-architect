@@ -57,7 +57,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
   }
 
   async function callApiGET(query: string): Promise<string> {
-    if (!API_URL) return 'API URL not configured (add VITE_API_URL in .env.local)'
+    if (!API_URL) return 'API URL not configured (add VITE_API_URL in env)'
 
     const url = `${API_URL}${API_URL.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`
     try {
