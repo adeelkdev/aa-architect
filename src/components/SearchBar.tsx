@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { useState, useRef, useEffect } from 'react'
-import { Search, Mic, Image, FileText, Send, X, Bot, User } from 'lucide-react'
+import { Mic, Image, FileText, Send, X, Bot, User } from 'lucide-react'
 import { motion, AnimatePresence } from "framer-motion";
 
 interface SearchBarProps {
@@ -16,172 +16,22 @@ interface AIResponse {
   timestamp: Date
 }
 
-/* ---------------- Databricks Genie config ----------------
-   In .env.local (never commit secrets):
-   VITE_DATABRICKS_HOST="https://<your-workspace-host>"
-   VITE_DATABRICKS_TOKEN="dapiXXXXXXXXXXXX"
-   VITE_DATABRICKS_ASSISTANT_ID="<optional>"
-   (Optional if you deploy a serverless proxy to fix CORS)
-   VITE_GENIE_PROXY_URL="https://<your-proxy>/api/genie"
----------------------------------------------------------- */
-const DATABRICKS_HOST = import.meta.env.VITE_DATABRICKS_HOST as string | undefined;
-const DATABRICKS_TOKEN = import.meta.env.VITE_DATABRICKS_TOKEN as string | undefined;
-const DATABRICKS_ASSISTANT_ID = import.meta.env.VITE_DATABRICKS_ASSISTANT_ID as string | undefined;
-const GENIE_PROXY_URL = import.meta.env.VITE_GENIE_PROXY_URL as string | undefined;
+// API base URL from env (e.g. https://api.example.com/ask)
+const API_URL = import.meta.env.VITE_API_URL as string | undefined
 
-const hasDirectGenie = Boolean(DATABRICKS_HOST && DATABRICKS_TOKEN);
-const hasProxy = Boolean(GENIE_PROXY_URL);
-
-function apiBase() {
-  // Prefer proxy if set (solves CORS & hides token on server)
-  return hasProxy ? GENIE_PROXY_URL! : `${DATABRICKS_HOST!.replace(/\/$/, '')}`;
-}
-
-async function genieCreateConversation(title: string) {
-  if (!hasDirectGenie && !hasProxy) throw new Error("Databricks Genie env not configured");
-
-  if (hasProxy) {
-    // Proxy expects { path, body } and adds Authorization server-side
-    const resp = await fetch(GENIE_PROXY_URL!, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: "/api/2.0/genie/conversations",
-        body: { title, assistant_id: DATABRICKS_ASSISTANT_ID || undefined },
-      }),
-    });
-    if (!resp.ok) throw new Error(`create conversation failed: ${resp.status}`);
-    const data = await resp.json();
-    return data.id ?? data.conversation_id;
-  } else {
-    const resp = await fetch(`${apiBase()}/api/2.0/genie/conversations`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${DATABRICKS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        title,
-        assistant_id: DATABRICKS_ASSISTANT_ID,
-      }),
-      // Note: direct browser calls may be blocked by CORS unless Databricks allows your origin
-    });
-    if (!resp.ok) throw new Error("Failed to create conversation");
-    const data = await resp.json();
-    return data.id ?? data.conversation_id;
-  }
-}
-
-async function genieSendMessage(conversationId: string, userText: string) {
-  if (!hasDirectGenie && !hasProxy) throw new Error("Databricks Genie env not configured");
-
-  if (hasProxy) {
-    const resp = await fetch(GENIE_PROXY_URL!, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: `/api/2.0/genie/conversations/${conversationId}/messages`,
-        body: { text: userText },
-      }),
-    });
-    if (!resp.ok) throw new Error(`send message failed: ${resp.status}`);
-    return resp.json();
-  } else {
-    const resp = await fetch(
-      `${apiBase()}/api/2.0/genie/conversations/${conversationId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${DATABRICKS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: userText }),
-      }
-    );
-    if (!resp.ok) throw new Error("Failed to send message");
-    return resp.json();
-  }
-}
-
-// One-shot ask (create + send)
-async function genieAskOnce(prompt: string): Promise<string> {
-  const convId = await genieCreateConversation("SearchBar session");
-  const msg = await genieSendMessage(convId, prompt);
-
-  // Try common shapes: { response: [{ text }] } or { messages: [...] } or plain { text }
-  const fromResponseArray = msg?.response?.[0]?.text;
-  if (typeof fromResponseArray === 'string') return fromResponseArray;
-
-  const messages = msg?.messages || msg?.data;
-  if (Array.isArray(messages)) {
-    const assistant = messages.find((m: any) => (m.role || m.author) === 'assistant' || m.role === 'bot');
-    if (assistant?.content && typeof assistant.content === 'string') return assistant.content;
-  }
-
-  if (typeof msg?.text === 'string') return msg.text;
-  if (typeof msg?.reply === 'string') return msg.reply;
-
-  // Fallback: stringify so user sees *something* real from API
-  return JSON.stringify(msg);
-}
-
-/* ---------------- Local fallback (only used if API fails) ---------------- */
-const generateAIResponse = (query: string): string => {
-  const responses: Record<string, string[]> = {
-    architecture: [
-      "I can help you with architectural design patterns, structural analysis, and building codes. What specific aspect interests you?",
-      "Architecture involves balancing functionality, aesthetics, and sustainability. Would you like to explore any particular architectural style?",
-      "From residential to commercial projects, I can assist with design principles, materials selection, and spatial planning."
-    ],
-    design: [
-      "Design is about solving problems creatively. I can help with UI/UX, graphic design, or architectural design principles.",
-      "Good design balances form and function. What type of design project are you working on?",
-      "I can assist with design systems, color theory, typography, and layout principles. What would you like to explore?"
-    ],
-    data: [
-      "Data analysis and visualization are crucial for informed decision-making. What kind of data are you working with?",
-      "I can help with data modeling, analytics, visualization techniques, and database design. What's your specific need?",
-      "From data collection to insights generation, I'm here to assist with your data-related questions."
-    ],
-    default: [
-      "I'm here to help with architecture, design, and data questions. Could you be more specific about what you'd like to know?",
-      "I can assist with architectural planning, design principles, data analysis, and more. What interests you most?",
-      "Feel free to ask about building design, data visualization, architectural software, or upload relevant files for analysis."
-    ]
-  }
-
-  const lowerQuery = query.toLowerCase()
-  let category = 'default'
-  if (lowerQuery.includes('architect') || lowerQuery.includes('building') || lowerQuery.includes('structure')) {
-    category = 'architecture'
-  } else if (lowerQuery.includes('design') || lowerQuery.includes('ui') || lowerQuery.includes('ux')) {
-    category = 'design'
-  } else if (lowerQuery.includes('data') || lowerQuery.includes('analytic') || lowerQuery.includes('chart')) {
-    category = 'data'
-  }
-
-  const categoryResponses = responses[category]
-  return categoryResponses[Math.floor(Math.random() * categoryResponses.length)]
-}
-
-/* ========================== Component ========================== */
 export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [promptValue, setPromptValue] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [aiResponses, setAiResponses] = useState<AIResponse[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-focus input when search becomes active
   useEffect(() => {
-    if (isSearchActive && inputRef.current) {
-      inputRef.current.focus()
-    }
+    if (isSearchActive && inputRef.current) inputRef.current.focus()
   }, [isSearchActive])
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, _type: 'document' | 'image') => {
@@ -201,36 +51,53 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
     setIsSearchActive(true)
   }
 
+  async function callApi(query: string): Promise<string> {
+    if (!API_URL) throw new Error('API URL not configured')
+
+    const resp = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    })
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+
+    const ct = resp.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      const data = await resp.json()
+      // Show whatever came back (entire JSON), per your requirement
+      return typeof data === 'string' ? data : JSON.stringify(data)
+    } else {
+      return await resp.text()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-
     if (!promptValue.trim() && uploadedFiles.length === 0) return
 
     const query = promptValue.trim() || `Uploaded ${uploadedFiles.length} file(s)`
     setIsGenerating(true)
 
     try {
-      // Try Genie (proxy first if set), otherwise fallback
-      let answer: string
-      try {
-        answer = await genieAskOnce(query)
-      } catch (apiErr: any) {
-        // If direct browser call fails (likely CORS), show an error but still fallback so UI keeps working.
-        setError(apiErr?.message || 'Databricks request failed (possibly CORS). Using local fallback.')
-        answer = generateAIResponse(query)
-      }
-
+      const answer = await callApi(query)
       const response: AIResponse = {
         id: Date.now().toString(),
         query,
-        response: answer,
+        response: answer || 'Service not available',
         timestamp: new Date()
       }
-
       setAiResponses(prev => [response, ...prev])
       setPromptValue('')
       setUploadedFiles([])
+    } catch {
+      const response: AIResponse = {
+        id: Date.now().toString(),
+        query,
+        response: 'Service not available',
+        timestamp: new Date()
+      }
+      setAiResponses(prev => [response, ...prev])
     } finally {
       setIsGenerating(false)
     }
@@ -241,7 +108,6 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
     setPromptValue('')
     setUploadedFiles([])
     setIsSearchActive(false)
-    setError(null)
   }
 
   return (
@@ -251,7 +117,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, delay: 1.5 }}
     >
-      {/* Hidden file inputs */}
+      {/* File upload inputs */}
       <input
         ref={fileInputRef}
         type="file"
@@ -268,40 +134,6 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
         onChange={(e) => handleFileUpload(e, 'image')}
         className="hidden"
       />
-
-      {/* Connection badge */}
-      <div className="mb-2 flex justify-center">
-        <span
-          title={
-            hasProxy
-              ? `Using proxy: ${GENIE_PROXY_URL}`
-              : hasDirectGenie
-                ? `Direct to Databricks: ${DATABRICKS_HOST}`
-                : 'Not configured'
-          }
-          className={
-            `inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${
-              hasProxy || hasDirectGenie ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-            }`
-          }
-        >
-          <svg width="8" height="8" viewBox="0 0 8 8" className={(hasProxy || hasDirectGenie) ? 'fill-green-500' : 'fill-gray-400'}>
-            <circle cx="4" cy="4" r="4" />
-          </svg>
-          {hasProxy
-            ? 'Databricks Genie: Connected via proxy'
-            : hasDirectGenie
-              ? 'Databricks Genie: Direct (may hit CORS)'
-              : 'Databricks Genie: Not configured'}
-        </span>
-      </div>
-
-      {/* Error banner (e.g., CORS) */}
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
 
       {/* AI Responses */}
       <AnimatePresence>
@@ -331,7 +163,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                   </div>
                 </div>
 
-                {/* AI Response */}
+                {/* API Response */}
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center flex-shrink-0">
                     <Bot className="w-4 h-4 text-black" />
@@ -378,7 +210,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                     {[0, 1, 2].map((i) => (
                       <motion.div
                         key={i}
-                        className="w-2 h-2 bg-grayx-400 rounded-full"
+                        className="w-2 h-2 bg-gray-400 rounded-full"
                         animate={{
                           scale: [1, 1.2, 1],
                           opacity: [0.5, 1, 0.5]
@@ -525,7 +357,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
             </motion.button>
           </div>
 
-          {/* Listening indicator */}
+          {/* Listening indicator - stroke animation around the search bar */}
           <AnimatePresence>
             {(isFocused || isSearchActive) && (
               <>
@@ -541,6 +373,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                     opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" }
                   }}
                 />
+
                 <motion.div
                   className="absolute inset-0 border-2 border-yellow-400/40 rounded-full pointer-events-none"
                   initial={{ opacity: 0, scale: 1 }}
@@ -549,7 +382,10 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                     scale: [1, 1.05, 1]
                   }}
                   exit={{ opacity: 0, scale: 1 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+                  transition={{
+                    duration: 2, repeat: Infinity, ease: "easeInOut",
+                    delay: 0.5
+                  }}
                 />
               </>
             )}
