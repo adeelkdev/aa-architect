@@ -19,6 +19,11 @@ interface AIResponse {
 // API base URL from env (e.g. https://api.example.com/ask)
 const API_URL = import.meta.env.VITE_API_URL as string | undefined
 
+function makeId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
   const [promptValue, setPromptValue] = useState('')
@@ -51,24 +56,22 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
     setIsSearchActive(true)
   }
 
-  async function callApi(query: string): Promise<string> {
-    if (!API_URL) throw new Error('API URL not configured')
+  async function callApiGET(query: string): Promise<string> {
+    if (!API_URL) return 'API URL not configured (add VITE_API_URL in .env.local)'
 
-    const resp = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    })
+    const url = `${API_URL}${API_URL.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`
+    try {
+      const resp = await fetch(url, { method: 'GET' })
+      if (!resp.ok) return 'Service not available'
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-
-    const ct = resp.headers.get('content-type') || ''
-    if (ct.includes('application/json')) {
-      const data = await resp.json()
-      // Show whatever came back (entire JSON), per your requirement
-      return typeof data === 'string' ? data : JSON.stringify(data)
-    } else {
+      const ct = resp.headers.get('content-type') || ''
+      if (ct.includes('application/json')) {
+        const data = await resp.json()
+        return typeof data === 'string' ? data : JSON.stringify(data)
+      }
       return await resp.text()
+    } catch {
+      return 'Service not available'
     }
   }
 
@@ -79,28 +82,19 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
     const query = promptValue.trim() || `Uploaded ${uploadedFiles.length} file(s)`
     setIsGenerating(true)
 
-    try {
-      const answer = await callApi(query)
-      const response: AIResponse = {
-        id: Date.now().toString(),
-        query,
-        response: answer || 'Service not available',
-        timestamp: new Date()
-      }
-      setAiResponses(prev => [response, ...prev])
-      setPromptValue('')
-      setUploadedFiles([])
-    } catch {
-      const response: AIResponse = {
-        id: Date.now().toString(),
-        query,
-        response: 'Service not available',
-        timestamp: new Date()
-      }
-      setAiResponses(prev => [response, ...prev])
-    } finally {
-      setIsGenerating(false)
+    const answer = await callApiGET(query)
+
+    const response: AIResponse = {
+      id: makeId(),
+      query,
+      response: answer || 'Service not available',
+      timestamp: new Date()
     }
+
+    setAiResponses(prev => [response, ...prev])
+    setPromptValue('')
+    setUploadedFiles([])
+    setIsGenerating(false)
   }
 
   const clearAll = () => {
@@ -117,6 +111,18 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, delay: 1.5 }}
     >
+      {/* Env status pill */}
+      <div className="mb-3 flex justify-center">
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${
+          API_URL ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'
+        }`}>
+          <svg width="8" height="8" viewBox="0 0 8 8" className={API_URL ? 'fill-green-500' : 'fill-yellow-500'}>
+            <circle cx="4" cy="4" r="4" />
+          </svg>
+          {API_URL ? 'API configured' : 'API URL not configured (add VITE_API_URL in .env.local)'}
+        </span>
+      </div>
+
       {/* File upload inputs */}
       <input
         ref={fileInputRef}
@@ -135,7 +141,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
         className="hidden"
       />
 
-      {/* AI Responses */}
+      {/* Responses */}
       <AnimatePresence>
         {isSearchActive && aiResponses.length > 0 && (
           <motion.div
@@ -191,8 +197,10 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
             </motion.button>
           </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Generating Response */}
+      {/* Generating Response */}
+      <AnimatePresence>
         {isGenerating && (
           <motion.div
             className="mb-6 bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-gray-200/50"
@@ -209,17 +217,10 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                   <div className="flex gap-1">
                     {[0, 1, 2].map((i) => (
                       <motion.div
-                        key={i}
-                        className="w-2 h-2 bg-gray-400 rounded-full"
-                        animate={{
-                          scale: [1, 1.2, 1],
-                          opacity: [0.5, 1, 0.5]
-                        }}
-                        transition={{
-                          duration: 1,
-                          repeat: Infinity,
-                          delay: i * 0.2
-                        }}
+                        key={`dot-${i}`}
+                        className="w-2 h-2 rounded-full bg-gray-400"
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
                       />
                     ))}
                   </div>
@@ -244,7 +245,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
             <div className="flex flex-wrap gap-2">
               {uploadedFiles.map((file, index) => (
                 <motion.div
-                  key={`${file.name}-${index}`}
+                  key={`${file.name || 'file'}-${file.lastModified}-${index}`}
                   className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-2 text-sm"
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -255,7 +256,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
                   ) : (
                     <FileText className="w-4 h-4 text-green-600" />
                   )}
-                  <span className="text-gray-700 max-w-32 truncate">{file.name}</span>
+                  <span className="text-gray-700 max-w-32 truncate">{file.name || 'file'}</span>
                   <button
                     onClick={() => removeFile(index)}
                     className="text-gray-400 hover:text-red-500 transition-colors"
@@ -269,12 +270,10 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
         )}
       </AnimatePresence>
 
-      {/* Main prompt panel */}
+      {/* Main input */}
       <form onSubmit={handleSubmit}>
         <motion.div
-          className={`relative flex items-center bg-white rounded-full p-2 shadow-2xl border-2 transition-all duration-300 ${
-            isSearchActive ? 'z-50' : ''
-          }`}
+          className={`relative flex items-center bg-white rounded-full p-2 shadow-2xl border-2 transition-all duration-300 ${isSearchActive ? 'z-50' : ''}`}
           animate={{
             borderColor: isFocused || isSearchActive ? 'rgba(255, 193, 7, 0.6)' : 'rgba(229, 231, 235, 1)',
             boxShadow: isFocused || isSearchActive
@@ -284,7 +283,7 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
           }}
           transition={{ duration: 0.3 }}
         >
-          {/* Left side - Upload buttons */}
+          {/* Upload buttons */}
           <div className="flex items-center gap-2 px-2 flex-shrink-0">
             <motion.button
               type="button"
@@ -307,10 +306,10 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
             </motion.button>
           </div>
 
-          {/* Separator */}
+          {/* Divider */}
           <div className="w-px h-8 bg-gray-200 mx-1 flex-shrink-0" />
 
-          {/* Center - Text input */}
+          {/* Text input */}
           <div className="flex-1 px-3 py-2 min-w-0">
             <input
               ref={inputRef}
@@ -319,23 +318,14 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
               onChange={(e) => setPromptValue(e.target.value)}
               onFocus={handleFocus}
               onBlur={() => setIsFocused(false)}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-                  e.currentTarget.select()
-                }
-              }}
+              onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'a') e.currentTarget.select() }}
               placeholder="Ask me anything about data, architecture, design or upload your files…"
               className="w-full outline-none bg-transparent text-gray-800 placeholder-gray-500 text-base leading-relaxed h-6 overflow-hidden text-ellipsis whitespace-nowrap select-text"
-              style={{
-                paddingRight: '8px',
-                userSelect: 'text',
-                WebkitUserSelect: 'text',
-                MozUserSelect: 'text'
-              }}
+              style={{ paddingRight: '8px', userSelect: 'text', WebkitUserSelect: 'text', MozUserSelect: 'text' }}
             />
           </div>
 
-          {/* Right side - Action buttons */}
+          {/* Actions */}
           <div className="flex items-center gap-2 px-2 flex-shrink-0">
             <motion.button
               type="button"
@@ -357,35 +347,23 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
             </motion.button>
           </div>
 
-          {/* Listening indicator - stroke animation around the search bar */}
+          {/* Focus ring */}
           <AnimatePresence>
             {(isFocused || isSearchActive) && (
               <>
                 <motion.div
                   className="absolute inset-0 border-2 border-yellow-400 rounded-full pointer-events-none"
-                  initial={{ opacity: 0, scale: 1 }}
-                  animate={{
-                    opacity: [0.6, 1, 0.6],
-                    scale: 1
-                  }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0.6, 1, 0.6] }}
                   exit={{ opacity: 0 }}
-                  transition={{
-                    opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-                  }}
+                  transition={{ opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" } }}
                 />
-
                 <motion.div
                   className="absolute inset-0 border-2 border-yellow-400/40 rounded-full pointer-events-none"
-                  initial={{ opacity: 0, scale: 1 }}
-                  animate={{
-                    opacity: [0, 0.4, 0],
-                    scale: [1, 1.05, 1]
-                  }}
-                  exit={{ opacity: 0, scale: 1 }}
-                  transition={{
-                    duration: 2, repeat: Infinity, ease: "easeInOut",
-                    delay: 0.5
-                  }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0, 0.4, 0] }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
                 />
               </>
             )}
@@ -394,21 +372,18 @@ export default function SearchBar({ isSearchActive, setIsSearchActive }: SearchB
       </form>
 
       {/* Helper text */}
-      <AnimatePresence>
-        {!isSearchActive && (
-          <motion.div
-            className="mt-3 text-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, delay: 2 }}
-          >
-            <p className="text-gray-600 text-sm">
-              Upload images, documents, or simply type your architectural questions
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {!isSearchActive && (
+        <motion.div
+          className="mt-3 text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 2 }}
+        >
+          <p className="text-gray-600 text-sm">
+            Upload images, documents, or simply type your architectural questions
+          </p>
+        </motion.div>
+      )}
     </motion.div>
   )
 }
